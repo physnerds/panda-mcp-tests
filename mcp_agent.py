@@ -11,7 +11,7 @@ and an Ollama server to answer questions using available PanDA tools.
 '''
 class PanDAAgentOllama:
     def __init__(self, mcp_url:str, ollama_url:str, auth_token:str=None, vo:str=None):
-        headers = {"Origin": vo} if auth_token else None
+        headers = {"Origin": vo} if vo and auth_token else None
         self.transport = StreamableHttpTransport(url=mcp_url, auth=auth_token, headers=headers)
         self.client = Client(transport=self.transport)
         self.ollama_url = ollama_url
