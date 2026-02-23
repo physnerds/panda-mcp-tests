@@ -45,10 +45,11 @@ args.kv = kv
 
 # construct base URL
 if args.use_http:
-    base_url = f"http://{args.host}:{args.port}/mcp/"
+    base_url = f"http://{args.host}:{args.port}/mcp"
 else:
-    base_url = f"https://{args.host}:{args.port}/mcp/"
+    base_url = f"https://{args.host}:{args.port}/mcp"
 
+print( f"Connecting to PanDA Server at {base_url} with transport {args.transport}")
 headers = {"Origin": args.vo} if args.token else None
 
 # select transport
@@ -59,16 +60,20 @@ else:
 
 # create client
 client = Client(transport)
+print(f"Using transport: {args.transport} with endpoint: {base_url}")
 
 
-# test function
 async def cl():
     # Connection is established here
     async with client:
-        if client.is_connected():
-            print("Client connected")
-        else:
-            print("Client failed to connect")
+        try:
+            if client.is_connected():
+                print("Client connected")
+            else:
+                print("Client failed to connect")
+                return
+        except Exception as e:
+            print(f"Connection check failed: {e}")
             return
 
         # Make MCP calls within the context
@@ -89,7 +94,6 @@ async def cl():
     else:
         print("Client still connected")
     print("Done")
-
 
 if __name__ == "__main__":
     asyncio.run(cl())

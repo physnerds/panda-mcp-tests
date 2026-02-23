@@ -349,28 +349,32 @@ The `mcp_agent.py` script is the main client for interacting with PanDA through 
 # Activate the virtual environment
 source panda-mcp/bin/activate
 
-# Query SDCC PanDA server
+# Mode 1: PanDA server in SDCC and MCP server in SDCC
 python mcp_agent.py --server sdcc
 
-# Query local Docker PanDA server
+# Mode 2: PanDA server in SDCC and MCP server in local Docker container
+# (MCP endpoint stays local on port 25888)
 python mcp_agent.py --server docker
 
 # Use specific Ollama model
 python mcp_agent.py --server sdcc --model mistral
 
 # Specify custom MCP URL
-python mcp_agent.py --mcp-url http://localhost:25888/mcp/ --ollama-url http://localhost:11434
+python mcp_agent.py --mcp-url http://localhost:25888/mcp/ --ollama_url http://localhost:11434
 ```
 
 ### Command-Line Arguments
 
 ```
---server {sdcc,docker}  : Preset configurations for SDCC or local Docker
+--server {sdcc,docker}  : MCP server preset (remote SDCC MCP or local Docker MCP)
 --mcp-url URL          : Custom MCP server URL
---ollama-url URL       : Custom Ollama server URL (default: http://localhost:11434)
+--host HOST            : Custom MCP host override
+--port PORT            : Custom MCP port override
+--use_http/--no-use_http : Force HTTP or HTTPS transport
+--ollama_url URL       : Custom Ollama server URL (default: http://localhost:11434)
 --model MODEL          : LLM model name (default: mistral)
---auth-token TOKEN     : OIDC authentication token for write operations
---vo VO                : Virtual organization name
+--token TOKEN          : OIDC authentication token for write operations
+--vo VO                : Virtual organization
 ```
 
 ### Example Interactions

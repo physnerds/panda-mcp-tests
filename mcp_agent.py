@@ -2,18 +2,23 @@ import argparse
 import asyncio
 import json
 import requests
+from urllib.parse import urlparse, urlunparse
 from fastmcp.client import Client
-from fastmcp.client.transports import StreamableHttpTransport   
+from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 
 '''
 This is an implementation of an agent that connects to PanDA MCP server
 and an Ollama server to answer questions using available PanDA tools.
 '''
 class PanDAAgentOllama:
-    def __init__(self, mcp_url:str, ollama_url:str, auth_token:str=None, vo:str=None):
+    def __init__(self, mcp_url:str, ollama_url:str, auth_token:str=None, vo:str=None, transport_mode:str="streamable-http"):
         headers = {"Origin": vo} if vo and auth_token else None
-        self.transport = StreamableHttpTransport(url=mcp_url, auth=auth_token, headers=headers)
+        if transport_mode == "sse":
+            self.transport = SSETransport(url=mcp_url, auth=auth_token, headers=headers)
+        else:
+            self.transport = StreamableHttpTransport(url=mcp_url, auth=auth_token, headers=headers)
         self.client = Client(transport=self.transport)
+        self.transport_mode = transport_mode
         self.ollama_url = ollama_url
         self.model = "mistral"
         self.conversation_history = []
