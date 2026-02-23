@@ -53,6 +53,36 @@ source panda-mcp/bin/activate
 python mcp_test_client.py --tool is_alive --host localhost --port 25888 --use_http
 ```
 
+## Mistral (Ollama) Setup
+
+This project uses Ollama for the LLM backend, with `mistral` as the default model in `mcp_agent.py`.
+
+1. Install Ollama:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+2. Start the Ollama server:
+
+```bash
+ollama serve
+```
+
+3. Download the Mistral model:
+
+```bash
+ollama pull mistral
+```
+
+4. Verify the model is available:
+
+```bash
+ollama list
+```
+
+You should see `mistral` in the list.
+
 ## Run the Agent
 
 ```bash
@@ -63,7 +93,7 @@ python mcp_agent.py --server docker
 Optional flags:
 
 - `--mcp-url http://localhost:25888/mcp/`
-- `--model mistral`
+- `--model mistral` (enables Mistral; this is the default)
 - `--ollama_url http://localhost:11434`
 - `--token <oidc_token>` (for write operations)
 - `--vo <virtual_org>`
