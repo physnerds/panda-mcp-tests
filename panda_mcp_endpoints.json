@@ -2,19 +2,5 @@
     "system": [
         "is_alive",
         "get_user_attributes"
-    ],
-    "job": [
-        "get_status",
-        "query_jobs",
-        "get_job_metadata",
-        "get_panda_ids"
-    ],
-    "task": [
-        "get_task_status",
-        "query_tasks",
-        "get_taskparams"
-    ],
-    "user": [
-        "get_user_jobs"
     ]
 }

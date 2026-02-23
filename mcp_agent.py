@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import re
 import requests
 from urllib.parse import urlparse, urlunparse
 from fastmcp.client import Client
@@ -12,17 +13,22 @@ and an Ollama server to answer questions using available PanDA tools.
 '''
 class PanDAAgentOllama:
     def __init__(self, mcp_url:str, ollama_url:str, auth_token:str=None, vo:str=None, transport_mode:str="streamable-http"):
-        headers = {"Origin": vo} if vo and auth_token else None
-        if transport_mode == "sse":
-            self.transport = SSETransport(url=mcp_url, auth=auth_token, headers=headers)
-        else:
-            self.transport = StreamableHttpTransport(url=mcp_url, auth=auth_token, headers=headers)
+        self.mcp_url = mcp_url
+        self.auth_token = auth_token
+        self.vo = vo
+        self.headers = {"Origin": vo} if vo and auth_token else None
+        self.transport = self._build_transport(mcp_url, transport_mode)
         self.client = Client(transport=self.transport)
         self.transport_mode = transport_mode
         self.ollama_url = ollama_url
         self.model = "mistral"
         self.conversation_history = []
         self.available_tools = []
+
+    def _build_transport(self, mcp_url: str, transport_mode: str):
+        if transport_mode == "sse":
+            return SSETransport(url=mcp_url, auth=self.auth_token, headers=self.headers)
+        return StreamableHttpTransport(url=mcp_url, auth=self.auth_token, headers=self.headers)
 
     async def initialize_tools(self):
         """Fetch and store available tools from PanDA MCP"""
@@ -52,7 +58,63 @@ class PanDAAgentOllama:
         
         tools_description += "\nWhen you need to use a tool, respond with JSON in this exact format: {\"tool\": \"tool_name\", \"arguments\": {}}."
         tools_description += "\nFor tools that require no arguments, use an empty arguments object: {\"arguments\": {}}."
+        tools_description += "\nIf the user asks to list available tools, answer directly in plain text and do not emit a tool call JSON."
         return tools_description
+
+    def format_available_tools(self):
+        """Render available tools as human-readable text."""
+        if not self.available_tools:
+            return "No tools are currently available from the connected MCP server."
+
+        lines = [f"Available tools ({len(self.available_tools)}):"]
+        for tool in self.available_tools:
+            desc = (tool.description or "").strip().split("\n")[0]
+            line = f"- {tool.name}"
+            if desc:
+                line += f": {desc}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    def is_list_tools_request(self, question: str):
+        """Detect explicit requests to print/list available tools."""
+        q = question.strip().lower()
+        patterns = [
+            r"\blist\b.*\btools?\b",
+            r"\bprint\b.*\btools?\b",
+            r"\bshow\b.*\btools?\b",
+            r"\bavailable tools?\b",
+            r"\bwhat tools?\b",
+            r"\bwhich tools?\b",
+        ]
+        return any(re.search(pattern, q) for pattern in patterns)
+
+    def parse_tool_call(self, response: str):
+        """Parse and validate tool call JSON from an LLM response."""
+        if not response:
+            return None, None, None
+
+        start = response.find("{")
+        end = response.rfind("}")
+        if start == -1 or end == -1 or end < start:
+            return None, None, None
+
+        try:
+            parsed = json.loads(response[start:end + 1])
+        except json.JSONDecodeError:
+            return None, None, None
+
+        if not isinstance(parsed, dict):
+            return None, None, None
+
+        tool_name = parsed.get("tool")
+        arguments = parsed.get("arguments", {})
+
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return None, None, "Invalid tool call format: missing non-empty 'tool' string."
+        if not isinstance(arguments, dict):
+            return None, None, "Invalid tool call format: 'arguments' must be a JSON object."
+
+        return tool_name.strip(), arguments, None
 
     async def execute_tool(self, tool_name: str, arguments: dict = None):
         """Execute a PanDA MCP tool"""
@@ -77,6 +139,11 @@ class PanDAAgentOllama:
             result = await self.client.call_tool(tool_name, arguments)
             return result
         except Exception as e:
+            err_msg = str(e)
+            if self._requires_ssl(err_msg):
+                retried = await self._retry_tool_with_https(tool_name, arguments or {})
+                if retried is not None:
+                    return retried
             print(f"Error executing tool {tool_name}: {e}")
             return {"error": str(e)}
 
@@ -102,6 +169,12 @@ class PanDAAgentOllama:
 
     async def process_question(self, question: str):
         """Process a user question using Ollama and PanDA tools"""
+        # Handle "list tools" requests deterministically from current MCP metadata.
+        if self.is_list_tools_request(question):
+            response = self.format_available_tools()
+            print(f"Agent: {response}")
+            return response
+
         # Create system prompt with available tools
         system_prompt = self.create_tools_prompt()
         full_prompt = f"{system_prompt}\n\nUser question: {question}"
@@ -114,32 +187,38 @@ class PanDAAgentOllama:
             return "Failed to get response from Ollama."
         
         # Check if Ollama wants to use a tool
-        try:
-            # Try to parse as JSON for tool call
-            if "{" in response and "tool" in response:
-                tool_call = json.loads(response[response.find("{"):response.rfind("}")+1])
-                tool_name = tool_call.get("tool")
-                arguments = tool_call.get("arguments", {})
-                
-                print(f"Agent: Using tool '{tool_name}'...")
-                tool_result = await self.execute_tool(tool_name, arguments)
-                
-                if tool_result and not isinstance(tool_result, dict) or (isinstance(tool_result, dict) and "error" not in tool_result):
-                    # Send tool result back to Ollama for interpretation
-                    result_prompt = f"The tool '{tool_name}' returned: {tool_result}. Please interpret this result for the user in a clear, concise way."
-                    final_response = self.query_ollama(result_prompt)
-                    print(f"Agent: {final_response}")
-                    return final_response
-                else:
-                    error_msg = f"Failed to execute tool {tool_name}."
-                    if isinstance(tool_result, dict) and "error" in tool_result:
-                        error_msg += f" Error: {tool_result['error']}"
-                    print(f"Agent: {error_msg}")
-                    return error_msg
-        except json.JSONDecodeError:
-            # Not a tool call, just a regular response
-            print(f"Agent: {response}")
-            return response
+        tool_name, arguments, parse_error = self.parse_tool_call(response)
+        if parse_error:
+            print(f"Agent: {parse_error}")
+            return parse_error
+
+        if tool_name:
+            known_tools = {tool.name for tool in self.available_tools}
+            if tool_name not in known_tools:
+                msg = (
+                    f"Tool '{tool_name}' is not available on this MCP server.\n"
+                    f"{self.format_available_tools()}"
+                )
+                print(f"Agent: {msg}")
+                return msg
+
+            print(f"Agent: Using tool '{tool_name}'...")
+            tool_result = await self.execute_tool(tool_name, arguments)
+
+            if (tool_result and not isinstance(tool_result, dict)) or (
+                isinstance(tool_result, dict) and "error" not in tool_result
+            ):
+                # Send tool result back to Ollama for interpretation
+                result_prompt = f"The tool '{tool_name}' returned: {tool_result}. Please interpret this result for the user in a clear, concise way."
+                final_response = self.query_ollama(result_prompt)
+                print(f"Agent: {final_response}")
+                return final_response
+
+            error_msg = f"Failed to execute tool {tool_name}."
+            if isinstance(tool_result, dict) and "error" in tool_result:
+                error_msg += f" Error: {tool_result['error']}"
+            print(f"Agent: {error_msg}")
+            return error_msg
         
         print(f"Agent: {response}")
         return response

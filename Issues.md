@@ -105,3 +105,15 @@ atlpan        11  2.3  0.1 102432 85952 pts/0    S+   20:55   0:00 python -u /op
 < 
   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
 * Connection #0 to host localhost left intact
+
+
+### Issue February 20 2025 To look at tomorrow
+I think I can connect to the PANDA-MCP server in SDCC that talks to PANDA server in SDCC.
+However, in the PANDA-MCP server hosted in SDCC, only one api is exposed (is_alive).
+Hence a local PandA MCP server is needed that talks to PANDA server hosted in SDCC. This will allow me to add other PandA APIs for the testing purpose. 
+
+
+See the preliminary testing reports here: 
+https://docs.google.com/document/d/15jCHwIkfmtJ6AI99L0ZDRiy4AEe4ycxwk_xwApsZ1Is/edit?usp=sharing
+
+# This issue is solved. Should use the correct server (pandacern instead of pandaserver01)
