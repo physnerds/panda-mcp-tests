@@ -107,6 +107,52 @@ sudo docker cp panda_mcp_endpoints.json panda-mcp:/opt/panda/etc/panda/
 sudo docker restart panda-mcp
 ```
 
+## Using vLLM (Perlmutter)
+
+For more powerful inference using the Llama-3.3-70B-Instruct model hosted on Perlmutter, you can use vLLM instead of Ollama.
+
+### 1. Set Up SSH Tunnel to Perlmutter
+
+First, establish an SSH tunnel to access the vLLM server running on Perlmutter:
+
+```bash
+ssh -L 8000:localhost:8000 perlmutter.nersc.gov
+```
+
+This forwards port 8000 from Perlmutter to your local machine.
+
+### 2. Run the Agent with vLLM
+
+```bash
+source panda-mcp/bin/activate
+python mcp_agent.py --server docker --use_vllm --vllm_url http://localhost:8000/v1/completions
+```
+
+Optional vLLM flags:
+
+- `--use_vllm`: Enable vLLM instead of Ollama
+- `--vllm_url http://localhost:8000/v1/completions`: vLLM server URL (default shown)
+
+### Key Differences: Ollama vs vLLM
+
+| Feature | Ollama | vLLM |
+|---------|--------|------|
+| **API Style** | Chat-based (`/api/chat`) | Completions (`/v1/completions`) |
+| **Model** | mistral (default) | Llama-3.3-70B-Instruct |
+| **Location** | Local | Perlmutter NERSC |
+| **Message Format** | Message history objects | Single prompt string |
+| **Performance** | Good for local testing | Better for complex reasoning |
+
+The agent automatically handles the different API formats when switching between backends.
+
+### Testing vLLM Connection
+
+You can test the vLLM connection independently using the test script:
+
+```bash
+python test-perlmutter-inference.py
+```
+
 ## References
 
 - PanDA docs: https://panda-wms.readthedocs.io/

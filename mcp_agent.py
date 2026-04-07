@@ -1,34 +1,65 @@
 import argparse
 import asyncio
 import json
+import os
 import re
 import requests
+from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 
-'''
-This is an implementation of an agent that connects to PanDA MCP server
-and an Ollama server to answer questions using available PanDA tools.
-'''
+def load_token_from_file(token_file=".token"):
+    """Load OIDC ID token from .token file"""
+    try:
+        token_path = Path(token_file)
+        if not token_path.exists():
+            return None
+        
+        with open(token_path, 'r') as f:
+            token_data = json.load(f)
+            return token_data.get('id_token')
+    except Exception as e:
+        print(f"Warning: Failed to load token from {token_file}: {e}")
+        return None
+
 class PanDAAgentOllama:
-    def __init__(self, mcp_url:str, ollama_url:str, auth_token:str=None, vo:str=None, transport_mode:str="streamable-http"):
+    def __init__(self, mcp_url:str, ollama_url:str, auth_token:str=None, vo:str=None, transport_mode:str="streamable-http", use_vllm:bool=False, vllm_url:str=None):
         self.mcp_url = mcp_url
         self.auth_token = auth_token
         self.vo = vo
-        self.headers = {"Origin": vo} if vo and auth_token else None
+        
+        # Build headers with OIDC token in PanDA-expected format
+        self.headers = {}
+        if auth_token:
+            self.headers['Authorization'] = f'Bearer {auth_token}'
+            self.headers['X-PANDAAUTH-TOKEN'] = auth_token
+        if vo:
+            self.headers['Origin'] = vo
+        
         self.transport = self._build_transport(mcp_url, transport_mode)
         self.client = Client(transport=self.transport)
         self.transport_mode = transport_mode
         self.ollama_url = ollama_url
-        self.model = "mistral"
+        self.use_vllm = use_vllm
+        self.vllm_url = vllm_url or "http://localhost:8000/v1/completions"
+        self.model = "mistral"  # Default model name
         self.conversation_history = []
         self.available_tools = []
 
     def _build_transport(self, mcp_url: str, transport_mode: str):
+        """Build transport with proper authentication headers"""
+        # Pass headers to transport - FastMCP will include them in all requests
         if transport_mode == "sse":
-            return SSETransport(url=mcp_url, auth=self.auth_token, headers=self.headers)
-        return StreamableHttpTransport(url=mcp_url, auth=self.auth_token, headers=self.headers)
+            return SSETransport(
+                url=mcp_url, 
+                headers=self.headers if self.headers else None
+            )
+        
+        return StreamableHttpTransport(
+            url=mcp_url, 
+            headers=self.headers if self.headers else None
+        )
 
     async def initialize_tools(self):
         """Fetch and store available tools from PanDA MCP"""
@@ -47,16 +78,34 @@ class PanDAAgentOllama:
             desc_lines = tool.description.strip().split('\n')
             short_desc = desc_lines[0] if desc_lines else ""
             
-            # Check if tool requires arguments
+            # Get schema information
             schema = tool.inputSchema
-            has_args = schema.get('properties', {}) if isinstance(schema, dict) else False
+            params_info = ""
+            if schema and isinstance(schema, dict):
+                properties = schema.get('properties', {})
+                required = schema.get('required', [])
+                
+                if properties:
+                    param_details = []
+                    for param_name, param_schema in properties.items():
+                        param_type = param_schema.get('type', 'any')
+                        param_desc = param_schema.get('description', '')
+                        is_required = param_name in required
+                        
+                        detail = f"'{param_name}' ({param_type}"
+                        if is_required:
+                            detail += ", required"
+                        detail += ")"
+                        if param_desc:
+                            detail += f": {param_desc}"
+                        param_details.append(detail)
+                    
+                    params_info = f" - Parameters: {', '.join(param_details)}"
             
-            tools_description += f"- {tool.name}: {short_desc}"
-            if not has_args:
-                tools_description += " (no arguments required)"
-            tools_description += "\n"
+            tools_description += f"- {tool.name}: {short_desc}{params_info}\n"
         
-        tools_description += "\nWhen you need to use a tool, respond with JSON in this exact format: {\"tool\": \"tool_name\", \"arguments\": {}}."
+        tools_description += "\nWhen you need to use a tool, respond with JSON in this exact format: {\"tool\": \"tool_name\", \"arguments\": {\"param_name\": value}}."
+        tools_description += "\nUse the EXACT parameter names shown above. For example, if a tool uses 'job_ids', do not use 'jobId'."
         tools_description += "\nFor tools that require no arguments, use an empty arguments object: {\"arguments\": {}}."
         tools_description += "\nIf the user asks to list available tools, answer directly in plain text and do not emit a tool call JSON."
         return tools_description
@@ -139,11 +188,6 @@ class PanDAAgentOllama:
             result = await self.client.call_tool(tool_name, arguments)
             return result
         except Exception as e:
-            err_msg = str(e)
-            if self._requires_ssl(err_msg):
-                retried = await self._retry_tool_with_https(tool_name, arguments or {})
-                if retried is not None:
-                    return retried
             print(f"Error executing tool {tool_name}: {e}")
             return {"error": str(e)}
 
@@ -167,24 +211,44 @@ class PanDAAgentOllama:
             print(f"Error querying Ollama: {e}")
             return None
 
+    def query_vllm(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7):
+        """Query vLLM server with a prompt and get response"""
+        payload = {
+            "model": "meta-llama/Llama-3.3-70B-Instruct",
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature
+        }
+        
+        try:
+            response = requests.post(self.vllm_url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            # vLLM returns text in choices[0].text
+            return data.get("choices", [{}])[0].get("text", "").strip()
+        except Exception as e:
+            print(f"Error querying vLLM: {e}")
+            return None
+
     async def process_question(self, question: str):
-        """Process a user question using Ollama and PanDA tools"""
-        # Handle "list tools" requests deterministically from current MCP metadata.
+        """Process a user question using Ollama/vLLM and PanDA tools"""
         if self.is_list_tools_request(question):
             response = self.format_available_tools()
             print(f"Agent: {response}")
             return response
 
-        # Create system prompt with available tools
         system_prompt = self.create_tools_prompt()
         full_prompt = f"{system_prompt}\n\nUser question: {question}"
         
-        # Query Ollama
-        response = self.query_ollama(full_prompt)
+        # Choose LLM backend
+        if self.use_vllm:
+            response = self.query_vllm(full_prompt)
+        else:
+            response = self.query_ollama(full_prompt)
         
         if not response:
-            print("Agent: Failed to get response from Ollama.")
-            return "Failed to get response from Ollama."
+            print("Agent: Failed to get response from LLM.")
+            return "Failed to get response from LLM."
         
         # Check if Ollama wants to use a tool
         tool_name, arguments, parse_error = self.parse_tool_call(response)
@@ -230,7 +294,7 @@ class PanDAAgentOllama:
 
 async def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="PanDA MCP Agent with Ollama")
+    parser = argparse.ArgumentParser(description="PanDA MCP Agent with Ollama or vLLM")
     parser.add_argument(
         "--server",
         type=str,
@@ -272,20 +336,36 @@ async def main():
         "--token",
         type=str,
         default=None,
-        help="OIDC ID token for write-operations (default: None)",
+        help="OIDC ID token for authentication (default: auto-load from .token file)",
+    )
+    parser.add_argument(
+        "--token_file",
+        type=str,
+        default=".token",
+        help="Path to token file (default: .token)",
     )
     parser.add_argument(
         "--vo",
         type=str,
-        default=None,
-        help="Virtual organization with ID token (default: None)",
+        default=os.getenv("PANDA_AUTH_VO", "EIC"),
+        help="Virtual organization (default: EIC or PANDA_AUTH_VO env var)",
+    )
+    parser.add_argument(
+        "--use_vllm",
+        action="store_true",
+        help="Use vLLM instead of Ollama (default: False)",
+    )
+    parser.add_argument(
+        "--vllm_url",
+        type=str,
+        default="http://localhost:8000/v1/completions",
+        help="vLLM server URL (default: http://localhost:8000/v1/completions)",
     )
     
     args = parser.parse_args()
     
     # Determine server configuration
     if args.host and args.port:
-        # Custom host and port provided
         mcp_host = args.host
         mcp_port = args.port
         use_http = args.use_http if args.use_http is not None else False
@@ -298,6 +378,15 @@ async def main():
         mcp_port = 25443
         use_http = args.use_http if args.use_http is not None else False
     
+    # Load token from file if not provided via CLI
+    auth_token = args.token
+    if not auth_token:
+        auth_token = load_token_from_file(args.token_file)
+        if auth_token:
+            print(f"✓ Loaded auth token from {args.token_file}")
+        else:
+            print(f"⚠ No auth token found. Some operations may be restricted.")
+    
     # Construct MCP URL
     protocol = "http" if use_http else "https"
     mcp_url = f"{protocol}://{mcp_host}:{mcp_port}/mcp/"
@@ -306,18 +395,26 @@ async def main():
     print("Initializing PanDAAgentOllama...")
     print(f"Server: {args.server if not args.host else 'custom'}")
     print(f"MCP URL: {mcp_url}")
-    print(f"Ollama URL: {args.ollama_url}")
-    print(f"Model: {args.model}")
+    if args.use_vllm:
+        print(f"vLLM URL: {args.vllm_url}")
+        print(f"Model: Llama-3.3-70B-Instruct")
+    else:
+        print(f"Ollama URL: {args.ollama_url}")
+        print(f"Model: {args.model}")
+    print(f"VO: {args.vo}")
+    print(f"Auth: {'✓ Token loaded' if auth_token else '✗ No token'}")
     
     agent = PanDAAgentOllama(
         mcp_url=mcp_url,
         ollama_url=args.ollama_url,
-        auth_token=args.token,
-        vo=args.vo
+        auth_token=auth_token,
+        vo=args.vo,
+        use_vllm=args.use_vllm,
+        vllm_url=args.vllm_url
     )
-    agent.model = args.model
-    print("PanDAAgentOllama initialized.")
-
+    if not args.use_vllm:
+        agent.model = args.model
+    
     # Connect to PanDA MCP and initialize tools
     try:
         async with agent.client:

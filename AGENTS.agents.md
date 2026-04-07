@@ -133,6 +133,7 @@ A failed MCP deployment often comes from one of these categories:
 # Resources that might be useful:
 - PanDA docs: https://panda-wms.readthedocs.io/
 - PanDA MCP docs: https://panda-wms.readthedocs.io/en/latest/advanced/mcp.html
+- Github on panda-server: https://github.com/PanDAWMS/panda-server/tree/master
 - **Local DEBUGGING_GUIDE.md**: Comprehensive reference with all debugging tools, common issues, and complete testing procedures developed from real debugging sessions
 - FastMCP documentation: Understanding the MCP protocol and transport types
 - Docker networking: Port mapping, container connectivity, and DNS resolution

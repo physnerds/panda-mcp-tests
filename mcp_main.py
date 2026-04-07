@@ -11,7 +11,7 @@ from pandaserver.pandamcp.mcp_utils import create_tool
 # remove or overwrite environment variables to avoid server's credential being used
 # EXCEPT when using OIDC auth (needed for BNL SDCC authentication)
 if os.environ.get("PANDA_AUTH") != "oidc":
-    for var in ["PANDA_AUTH_ID_TOKEN", "PANDA_AUTH_VO", "X509_USER_PROXY"]:
+    for var in ["PANDA_AUTH_VO", "X509_USER_PROXY"]:
         if var in os.environ:
             del os.environ[var]
     os.environ["X509_USER_PROXY"] = "/dev/null"

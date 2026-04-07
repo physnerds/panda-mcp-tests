@@ -2,5 +2,13 @@
     "system": [
         "is_alive",
         "get_user_attributes"
+    ],
+    "job": [
+        "get_status",
+        "get_description"
+
+    ],
+    "event": [
+        "get_available_event_range_count"
     ]
 }
