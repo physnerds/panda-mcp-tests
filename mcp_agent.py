@@ -5,9 +5,12 @@ import os
 import re
 import requests
 from pathlib import Path
+from typing import Any, Dict, List
 from urllib.parse import urlparse, urlunparse
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from llm_providers import LLMProvider, OllamaProvider, VLLMProvider
+from base_agent import BaseAgent
 
 def load_token_from_file(token_file=".token"):
     """Load OIDC ID token from .token file"""
@@ -23,8 +26,26 @@ def load_token_from_file(token_file=".token"):
         print(f"Warning: Failed to load token from {token_file}: {e}")
         return None
 
-class PanDAAgentOllama:
-    def __init__(self, mcp_url:str, ollama_url:str, auth_token:str=None, vo:str=None, transport_mode:str="streamable-http", use_vllm:bool=False, vllm_url:str=None):
+class PanDAMCPAgent(BaseAgent):
+    """
+    PanDA MCP Agent - specialized agent for interacting with PanDA WMS via MCP protocol.
+    
+    This agent connects to a PanDA MCP server, discovers available tools,
+    and uses an LLM to interpret user questions and execute appropriate PanDA operations.
+    """
+    
+    def __init__(self, mcp_url: str, llm_provider: LLMProvider, auth_token: str = None, vo: str = None, transport_mode: str = "streamable-http"):
+        """Initialize PanDA MCP Agent.
+        
+        Args:
+            mcp_url: PanDA MCP server URL
+            llm_provider: LLM provider instance (OllamaProvider, VLLMProvider, etc.)
+            auth_token: OIDC authentication token
+            vo: Virtual organization
+            transport_mode: MCP transport type ("sse" or "streamable-http")
+        """
+        super().__init__(llm_provider, agent_name="PanDAMCPAgent")
+        
         self.mcp_url = mcp_url
         self.auth_token = auth_token
         self.vo = vo
@@ -40,11 +61,6 @@ class PanDAAgentOllama:
         self.transport = self._build_transport(mcp_url, transport_mode)
         self.client = Client(transport=self.transport)
         self.transport_mode = transport_mode
-        self.ollama_url = ollama_url
-        self.use_vllm = use_vllm
-        self.vllm_url = vllm_url or "http://localhost:8000/v1/completions"
-        self.model = "mistral"  # Default model name
-        self.conversation_history = []
         self.available_tools = []
 
     def _build_transport(self, mcp_url: str, transport_mode: str):
@@ -61,17 +77,21 @@ class PanDAAgentOllama:
             headers=self.headers if self.headers else None
         )
 
-    async def initialize_tools(self):
-        """Fetch and store available tools from PanDA MCP"""
+    async def initialize(self) -> bool:
+        """Fetch and store available tools from PanDA MCP."""
         try:
             self.available_tools = await self.client.list_tools()
-            return self.available_tools
+            return True
         except Exception as e:
             print(f"Error fetching tools: {e}")
-            return []
+            return False
+    
+    def get_available_tools(self) -> List[Any]:
+        """Return list of available MCP tools."""
+        return self.available_tools
 
-    def create_tools_prompt(self):
-        """Create a prompt describing available tools for Ollama"""
+    def create_system_prompt(self) -> str:
+        """Create a system prompt describing available PanDA tools for the LLM."""
         tools_description = "You have access to the following PanDA tools:\n\n"
         for tool in self.available_tools:
             # Extract just the tool name and first line of description
@@ -124,49 +144,10 @@ class PanDAAgentOllama:
             lines.append(line)
         return "\n".join(lines)
 
-    def is_list_tools_request(self, question: str):
-        """Detect explicit requests to print/list available tools."""
-        q = question.strip().lower()
-        patterns = [
-            r"\blist\b.*\btools?\b",
-            r"\bprint\b.*\btools?\b",
-            r"\bshow\b.*\btools?\b",
-            r"\bavailable tools?\b",
-            r"\bwhat tools?\b",
-            r"\bwhich tools?\b",
-        ]
-        return any(re.search(pattern, q) for pattern in patterns)
 
-    def parse_tool_call(self, response: str):
-        """Parse and validate tool call JSON from an LLM response."""
-        if not response:
-            return None, None, None
 
-        start = response.find("{")
-        end = response.rfind("}")
-        if start == -1 or end == -1 or end < start:
-            return None, None, None
-
-        try:
-            parsed = json.loads(response[start:end + 1])
-        except json.JSONDecodeError:
-            return None, None, None
-
-        if not isinstance(parsed, dict):
-            return None, None, None
-
-        tool_name = parsed.get("tool")
-        arguments = parsed.get("arguments", {})
-
-        if not isinstance(tool_name, str) or not tool_name.strip():
-            return None, None, "Invalid tool call format: missing non-empty 'tool' string."
-        if not isinstance(arguments, dict):
-            return None, None, "Invalid tool call format: 'arguments' must be a JSON object."
-
-        return tool_name.strip(), arguments, None
-
-    async def execute_tool(self, tool_name: str, arguments: dict = None):
-        """Execute a PanDA MCP tool"""
+    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Execute a PanDA MCP tool."""
         try:
             # Find the tool to check its schema
             tool_schema = None
@@ -190,106 +171,6 @@ class PanDAAgentOllama:
         except Exception as e:
             print(f"Error executing tool {tool_name}: {e}")
             return {"error": str(e)}
-
-    def query_ollama(self, prompt: str):
-        """Query Ollama server with a prompt and get response"""
-        messages = self.conversation_history + [{"role": "user", "content": prompt}]
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False
-        }
-        
-        try:
-            response = requests.post(f"{self.ollama_url}/api/chat", json=payload)
-            response.raise_for_status()
-            data = response.json()
-            assistant_message = data.get("message", {}).get("content", "")
-            return assistant_message
-        except Exception as e:
-            print(f"Error querying Ollama: {e}")
-            return None
-
-    def query_vllm(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7):
-        """Query vLLM server with a prompt and get response"""
-        payload = {
-            "model": "meta-llama/Llama-3.3-70B-Instruct",
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": temperature
-        }
-        
-        try:
-            response = requests.post(self.vllm_url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            # vLLM returns text in choices[0].text
-            return data.get("choices", [{}])[0].get("text", "").strip()
-        except Exception as e:
-            print(f"Error querying vLLM: {e}")
-            return None
-
-    async def process_question(self, question: str):
-        """Process a user question using Ollama/vLLM and PanDA tools"""
-        if self.is_list_tools_request(question):
-            response = self.format_available_tools()
-            print(f"Agent: {response}")
-            return response
-
-        system_prompt = self.create_tools_prompt()
-        full_prompt = f"{system_prompt}\n\nUser question: {question}"
-        
-        # Choose LLM backend
-        if self.use_vllm:
-            response = self.query_vllm(full_prompt)
-        else:
-            response = self.query_ollama(full_prompt)
-        
-        if not response:
-            print("Agent: Failed to get response from LLM.")
-            return "Failed to get response from LLM."
-        
-        # Check if Ollama wants to use a tool
-        tool_name, arguments, parse_error = self.parse_tool_call(response)
-        if parse_error:
-            print(f"Agent: {parse_error}")
-            return parse_error
-
-        if tool_name:
-            known_tools = {tool.name for tool in self.available_tools}
-            if tool_name not in known_tools:
-                msg = (
-                    f"Tool '{tool_name}' is not available on this MCP server.\n"
-                    f"{self.format_available_tools()}"
-                )
-                print(f"Agent: {msg}")
-                return msg
-
-            print(f"Agent: Using tool '{tool_name}'...")
-            tool_result = await self.execute_tool(tool_name, arguments)
-
-            if (tool_result and not isinstance(tool_result, dict)) or (
-                isinstance(tool_result, dict) and "error" not in tool_result
-            ):
-                # Send tool result back to Ollama for interpretation
-                result_prompt = f"The tool '{tool_name}' returned: {tool_result}. Please interpret this result for the user in a clear, concise way."
-                final_response = self.query_ollama(result_prompt)
-                print(f"Agent: {final_response}")
-                return final_response
-
-            error_msg = f"Failed to execute tool {tool_name}."
-            if isinstance(tool_result, dict) and "error" in tool_result:
-                error_msg += f" Error: {tool_result['error']}"
-            print(f"Agent: {error_msg}")
-            return error_msg
-        
-        print(f"Agent: {response}")
-        return response
-
-    def add_to_history(self, role: str, content: str):
-        """Add a message to conversation history"""
-        self.conversation_history.append({"role": role, "content": content})
 
 
 async def main():
@@ -391,29 +272,32 @@ async def main():
     protocol = "http" if use_http else "https"
     mcp_url = f"{protocol}://{mcp_host}:{mcp_port}/mcp/"
     
+    # Create LLM provider
+    if args.use_vllm:
+        llm_provider = VLLMProvider(
+            base_url=args.vllm_url,
+            model="meta-llama/Llama-3.3-70B-Instruct"
+        )
+    else:
+        llm_provider = OllamaProvider(
+            base_url=args.ollama_url,
+            model=args.model
+        )
+    
     # Initialize agent
-    print("Initializing PanDAAgentOllama...")
+    print("Initializing PanDA Agent...")
     print(f"Server: {args.server if not args.host else 'custom'}")
     print(f"MCP URL: {mcp_url}")
-    if args.use_vllm:
-        print(f"vLLM URL: {args.vllm_url}")
-        print(f"Model: Llama-3.3-70B-Instruct")
-    else:
-        print(f"Ollama URL: {args.ollama_url}")
-        print(f"Model: {args.model}")
+    print(f"LLM Provider: {llm_provider.get_provider_name()}")
     print(f"VO: {args.vo}")
     print(f"Auth: {'✓ Token loaded' if auth_token else '✗ No token'}")
     
-    agent = PanDAAgentOllama(
+    agent = PanDAMCPAgent(
         mcp_url=mcp_url,
-        ollama_url=args.ollama_url,
+        llm_provider=llm_provider,
         auth_token=auth_token,
-        vo=args.vo,
-        use_vllm=args.use_vllm,
-        vllm_url=args.vllm_url
+        vo=args.vo
     )
-    if not args.use_vllm:
-        agent.model = args.model
     
     # Connect to PanDA MCP and initialize tools
     try:
@@ -423,7 +307,10 @@ async def main():
                 return
             
             print("Connected to PanDA MCP.")
-            await agent.initialize_tools()
+            initialized = await agent.initialize()
+            if not initialized:
+                print("Failed to initialize agent tools.")
+                return
             
             print(f"\nAvailable tools: {len(agent.available_tools)}")
             for tool in agent.available_tools:

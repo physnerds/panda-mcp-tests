@@ -10,5 +10,9 @@
     ],
     "event": [
         "get_available_event_range_count"
+    ],
+    "statistics": [
+        "job_stats_by_cloud",
+        "active_job_stats_by_site"
     ]
 }
