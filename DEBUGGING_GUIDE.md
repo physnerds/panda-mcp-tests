@@ -242,6 +242,82 @@ PANDA_API_URL=http://pandaserver01.sdcc.bnl.gov:25080/api/v1
 
 ---
 
+### Issue 7: Docker/VPN IPv6 Routing Failure
+**Symptom**:
+- MCP server was running and the host could connect to `localhost:25888`
+- `mcp_agent.py --server docker` failed while connected to the BNL VPN
+- After disconnecting from the VPN, the same agent connected successfully:
+  ```text
+  Connected to PanDA MCP.
+  Available tools: 5
+  ```
+- Inside the container, `pandaserver01.sdcc.bnl.gov` resolved to IPv6 only:
+  ```text
+  2620:12f:f001:1::10 pandaserver01.sdcc.bnl.gov
+  ```
+- But the container could not route to that IPv6 address:
+  ```text
+  Trying 2620:12f:f001:1::10:25080...
+  Immediate connect fail for 2620:12f:f001:1::10: Network is unreachable
+  curl: (7) Couldn't connect to server
+  ```
+
+**Root Cause**:
+The failure was Docker/container networking, not MCP startup. The PanDA hostname resolved to an IPv6 address, but the Docker bridge network did not have a working IPv6 route while the VPN was active.
+
+There are two separate network paths:
+```text
+host/client -> localhost:25888 -> container MCP
+container MCP -> pandaserver01.sdcc.bnl.gov:25080
+```
+
+`-p 25888:25888` only fixes the first path by publishing the MCP port to the host. It does not fix the second path, where the container must make an outgoing connection to PanDA.
+
+**Important Verification**:
+Running `mcp_main.py` manually produced:
+```text
+ERROR: [Errno 98] error while attempting to bind on address ('0.0.0.0', 25888): address already in use
+```
+
+This is not a startup failure. It means the real MCP server was already running and already owned port `25888`.
+
+**Solution / Workarounds**:
+1. Disconnect from the VPN if it is breaking Docker bridge routing.
+2. For local debugging, recreate the container with host networking:
+   ```bash
+   sudo docker rm -f panda-mcp
+   # Recreate the container with:
+   --network host
+   ```
+   Do not combine `--network host` with `-p 25888:25888`; host networking does not use Docker port publishing.
+3. Long-term cleaner fixes:
+   - Enable IPv6 properly in the Docker daemon.
+   - Use an IPv4-reachable PanDA hostname or endpoint if available.
+   - Configure Docker DNS/routing so containers can reach the same network path as the host.
+
+**Tests**:
+```bash
+# Check what the host resolves
+getent hosts pandaserver01.sdcc.bnl.gov
+getent ahostsv4 pandaserver01.sdcc.bnl.gov
+
+# Check what the container resolves
+sudo docker exec panda-mcp getent hosts pandaserver01.sdcc.bnl.gov
+sudo docker exec panda-mcp getent ahostsv4 pandaserver01.sdcc.bnl.gov
+
+# Test PanDA API reachability from the host
+curl -v http://pandaserver01.sdcc.bnl.gov:25080/api/v1/system/is_alive
+
+# Test PanDA API reachability from inside the container
+sudo docker exec panda-mcp curl -v \
+  http://pandaserver01.sdcc.bnl.gov:25080/api/v1/system/is_alive
+
+# Test MCP itself from the host
+python mcp_test_client.py --tool is_alive --host localhost --port 25888 --use_http
+```
+
+---
+
 ## Debugging Tools & Techniques
 
 ### 1. Container Diagnostics
