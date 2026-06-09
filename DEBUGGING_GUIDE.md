@@ -598,7 +598,7 @@ Attempts to fix common startup issues:
 
 #### Enter Container
 ```bash
-# Interactive shell
+# 1ive shell
 sudo docker exec -it panda-mcp bash
 
 # Run command as root
