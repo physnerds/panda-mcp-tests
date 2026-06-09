@@ -67,3 +67,5 @@ wheels/
 extracted/
 Docker.pandamon
 instruction-for-pandamon.md
+swf-monitor/
+AID2E-framework/
