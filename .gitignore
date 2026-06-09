@@ -62,3 +62,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Branch specific files
+extracted/
+Docker.pandamon
+instruction-for-pandamon.md
