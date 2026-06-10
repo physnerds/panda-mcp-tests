@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 
 from fastmcp import Client
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
@@ -81,12 +82,15 @@ async def cl():
         print(f"\nAvailable tools:")
         for tool in tools:
             print(f"- {tool.name} -\n")
-            print(f" Description: {tool.description}")
+            if tool.name == args.tool:
+                selected_tool = tool
+            #print(f" Description: {tool.description}")
 
         print("\n" * 2)
-        print(f"Testing {args.tool}:")
+        print(f"Testing {args.tool}: \n {selected_tool.description}\n")
         result = await client.call_tool(args.tool, args.kv)
-        print(f"Result: {result}\n")
+        text = result.content[0].text if result.content else ""
+        print(f"Result:\n{text}\n")
 
     # Connection is closed automatically here
     if not client.is_connected():

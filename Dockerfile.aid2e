@@ -1,0 +1,54 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.11-slim
+
+ARG AID2E_REPO=https://github.com/aid2e/AID2E-framework.git
+ARG AID2E_BRANCH=testing-pymoo-models
+ARG AID2E_INSTALL_EXTRAS=
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/aid2e-venv \
+    AID2E_HOME=/opt/AID2E-framework \
+    AID2E_WORKDIR=/work \
+    MCP_PORT=25887
+
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv "${VIRTUAL_ENV}" \
+    && pip install --no-cache-dir --upgrade pip setuptools wheel
+
+WORKDIR /opt
+
+RUN git clone --depth 1 --branch "${AID2E_BRANCH}" "${AID2E_REPO}" "${AID2E_HOME}"
+
+WORKDIR ${AID2E_HOME}
+
+RUN if [ -n "${AID2E_INSTALL_EXTRAS}" ]; then \
+        pip install --no-cache-dir ".[${AID2E_INSTALL_EXTRAS}]"; \
+    else \
+        pip install --no-cache-dir .; \
+    fi
+
+# MCP/Uvicorn are installed here so the image can serve AID2E tools over MCP.
+RUN pip install --no-cache-dir mcp starlette uvicorn
+
+WORKDIR /app
+
+RUN mkdir -p /app /work
+
+COPY extracted/aid2e_server/aid2e_service/ /app/aid2e_service/
+
+EXPOSE 25887
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import os, socket; s=socket.create_connection(('127.0.0.1', int(os.getenv('MCP_PORT', '25887'))), 3); s.close()"
+
+CMD ["sh", "-c", "uvicorn aid2e_service.asgi:application --host 0.0.0.0 --port ${MCP_PORT}"]

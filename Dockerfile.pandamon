@@ -1,0 +1,30 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV DJANGO_SETTINGS_MODULE=pandamon_service.settings
+ENV MCP_PORT=25889
+
+WORKDIR /app
+
+RUN apt-get update     && apt-get install -y --no-install-recommends         ca-certificates         curl         gcc         libpq-dev     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir     asgiref     django     mcp     psycopg2-binary     requests     starlette     uvicorn
+
+# Build context must include the extracted service package:
+#   extracted/pandamon_server/pandamon_service/__init__.py
+#   extracted/pandamon_server/pandamon_service/app.py
+#   extracted/pandamon_server/pandamon_service/asgi.py
+#   extracted/pandamon_server/pandamon_service/settings.py
+#   extracted/pandamon_server/pandamon_service/tools.py
+#   extracted/pandamon_server/pandamon_service/queries.py
+#   extracted/pandamon_server/pandamon_service/constants.py
+#   extracted/pandamon_server/pandamon_service/sql.py
+COPY extracted/pandamon_server/pandamon_service/ /app/pandamon_service/
+
+EXPOSE 25889
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3     CMD python -c "import socket, os; s=socket.create_connection(('127.0.0.1', int(os.getenv('MCP_PORT', '25889'))), 3); s.close()"
+
+CMD ["sh", "-c", "uvicorn pandamon_service.asgi:application --host 0.0.0.0 --port ${MCP_PORT}"]

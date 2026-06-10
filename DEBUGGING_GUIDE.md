@@ -687,3 +687,14 @@ sudo docker restart panda-mcp && sleep 5
 # Enter container for debugging
 sudo docker exec -it panda-mcp bash
 ```
+
+# Build aid2e in docker container
+```bash
+sudo docker build -f Dockerfile.aid2e \
+    --build-arg AID2E_INSTALL_EXTRAS=all \
+    -t aid2e-mcp:latest .
+
+# Check if the build and installation succeeded
+sudo docker run -f --rm aid2e-mcp:latest aid2e --help
+```
+
