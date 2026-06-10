@@ -64,7 +64,9 @@ wheels/
 *.egg
 
 # Branch specific files
-extracted/
+!extracted/*
+extracted/pandamon_server/
+extracted/pandamon_server/**
 Docker.pandamon
 instruction-for-pandamon.md
 swf-monitor/
