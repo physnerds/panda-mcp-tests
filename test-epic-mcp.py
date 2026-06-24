@@ -14,7 +14,7 @@ SSL_CERT_DIR is set to /etc/grid-security/certificates/
 SWF_MONITOR_MCP_TOKEN is expected to have the token value
 '''
 
-URL = "https://pandaserver02.sdcc.bnl.gov/swf-monitor/mcp/"
+URL = "https://pandaserver02.sdcc.bnl.gov:8443/swf-monitor/mcp/"
 
 
 def pretty(obj):

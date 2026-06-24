@@ -83,6 +83,19 @@ ollama list
 
 You should see `mistral` in the list.
 
+## Some checks for the model
+```test
+AID2E-Agentic-Framework/panda-idds-server$ ollama serve
+Error: listen tcp 127.0.0.1:11434: bind: address already in use
+(panda-mcp) (base) amitbashyal@lpo-178574:~/Documents/BNL-AiD2E/mcp-server/AID2E-Agentic-Framework/panda-idds-server$ ollama list
+NAME              ID              SIZE      MODIFIED     
+mistral:latest    6577803aa9a0    4.4 GB    5 months ago    
+(panda-mcp) (base) amitbashyal@lpo-178574:~/Documents/BNL-AiD2E/mcp-server/AID2E-Agentic-Framework/panda-idds-server$ curl http://127.0.0.1:11434
+Ollama is running(panda-mcp) (base) amitbashyal@lpo-178574:~/Documents/BNL-AiD2E/mcp-server/AID2E-Agentic-Framework/panda-idds-server$ curl http://127.0.0.1:11434/api/tags
+{"models":[{"name":"mistral:latest","model":"mistral:latest","modified_at":"2026-01-10T22:40:04.744950231-05:00","size":4372824384,"digest":"6577803aa9a036369e481d648a2baebb381ebc6e897f2bb9a766a2aa7bfbc1cf","details":{"parent_model":"","format":"gguf","family":"llama","families":["llama"],"parameter_size":"7.2B","quantization_level":"Q4_K_M"}}]}(panda-mcp) (base) amitbashyal@lpo-178574:~/Documents/BNL-AiD2E/mcp-server/AID2E-Agentic-Framework/panda-idds-server$ 
+(panda-mcp) (base) amitbashyal@lpo-178574:~/Documents/BNL-AiD2E/mcp-server/AID2E-Agentic-Framework/panda-idds-server$ ollama run mistral:latest "Explain what MCP is in one paragraph"
+```
+
 ## Run the Agent
 
 ```bash
@@ -158,3 +171,46 @@ python test-perlmutter-inference.py
 - PanDA docs: https://panda-wms.readthedocs.io/
 - PanDA MCP docs: https://panda-wms.readthedocs.io/en/latest/advanced/mcp.html
 - Model Context Protocol: https://modelcontextprotocol.io/
+
+
+# Using codex with a local agent (example with mistral)
+
+```bash
+codex --oss -m mistral:latest
+```
+
+# Check if a port is in use
+```bash
+sudo lsof -i :${PORT_NUMBER}
+
+```
+
+## Adding a perlmutter hosted llm in the codex
+This assumes that you are running a ssh portal in another terminal like:
+```bash
+ssh -L 8000:nid008409:8000 abashyal@perlmutter.nersc.gov
+```
+
+nid value depends on the node id on which the llm is running in the perlmutter machine. 
+Create a .codex/remote-vllm.config.toml
+```bash
+[profiles.remote-vllm]
+model = "meta-llama/Llama-3.3-70B-Instruct"
+model_provider = "remote_vllm"
+
+[model_providers.remote_vllm]
+name = "Remote vLLM over SSH tunnel"
+base_url = "http://127.0.0.1:8000/v1"
+wire_api = "response"
+```
+
+Copy it over to the default codex location
+```bash
+cp .codex/remote-vllm.config.toml ~/.codex/
+```
+
+Run with the remote llm profile:
+```bash
+codex --profile remote-vllm
+```
+
