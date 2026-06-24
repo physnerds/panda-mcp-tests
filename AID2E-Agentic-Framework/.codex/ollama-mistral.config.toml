@@ -1,0 +1,4 @@
+# ~/.codex/ollama-mistral.config.toml
+
+model_provider = "ollama"
+model = "mistral:latest"

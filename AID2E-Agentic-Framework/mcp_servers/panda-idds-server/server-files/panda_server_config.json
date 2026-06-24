@@ -1,0 +1,4 @@
+{"mcp": {"transport": "http",
+         "endpoint_list_file": "/opt/panda/etc/panda/panda_mcp_endpoints.json"
+         }
+}

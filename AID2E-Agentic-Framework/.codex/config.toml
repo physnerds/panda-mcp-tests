@@ -1,0 +1,15 @@
+# .codex/config.toml
+
+# AID2E specific Codex settings
+
+
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+
+
+[mcp_servers.swf-testbed]
+type = "streamable_http"
+url = "https://pandaserver02.sdcc.bnl.gov:8443/swf-monitor/mcp/"
+bearer_token_env_var = "SWF_MONITOR_MCP_TOKEN"
+

@@ -1,0 +1,7 @@
+model = "meta-llama/Llama-3.3-70B-Instruct"
+model_provider = "remote_vllm"
+
+[model_providers.remote_vllm]
+name = "vLLM-over-Perlmutter"
+base_url = "http://127.0.0.1:8000/v1"
+wire_api = "responses"

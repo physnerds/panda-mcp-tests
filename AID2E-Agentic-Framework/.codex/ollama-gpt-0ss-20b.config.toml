@@ -1,0 +1,4 @@
+# ~/.codex/ollama-gpt-oss-20b.config.toml
+
+model_provider = "ollama"
+model = "gpt-oss:20b"
