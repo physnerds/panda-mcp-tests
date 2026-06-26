@@ -1,0 +1,11 @@
+# Regex patterns for detecting user requests about MCP tool discovery or usage.
+\blist\b.*\btools?\b
+\bprint\b.*\btools?\b
+\bshow\b.*\btools?\b
+\bavailable tools?\b
+\bwhat tools?\b
+\bwhich tools?\b
+\btool usage\b
+\btools?\b.*\busage\b
+\bhow\b.*\buse\b.*\btools?\b
+\bhow\b.*\btools?\b.*\bwork\b
