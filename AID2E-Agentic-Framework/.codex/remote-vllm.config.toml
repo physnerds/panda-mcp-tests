@@ -1,6 +1,11 @@
 model = "meta-llama/Llama-3.3-70B-Instruct"
 model_provider = "remote_vllm"
 
+model_context_window = 131072
+model_auto_compact_token_limit = 100000
+tool_output_token_limit = 12000
+model_supports_reasoning_summaries = false
+
 [model_providers.remote_vllm]
 name = "vLLM-over-Perlmutter"
 base_url = "http://127.0.0.1:8000/v1"
