@@ -82,7 +82,7 @@ This basically changes from responsibility of the framework from creating, manag
 AID2E-Agentic-Framework
 ├── mcp_servers/
 │   ├── panda-idds/
-│   ├── panda-epic/
+│   ├── swf-agents/
 │   ├── aid2e/
 │   ├── git/
 │   ├── logs/

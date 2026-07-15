@@ -38,3 +38,15 @@ python mcp_agent.py --server docker
 
 
 
+```bash
+
+  cp .codex/remote-vllm.config.toml ~/.codex/remote-vllm.config.toml
+  codex --profile remote-vllm
+```
+
+Before starting Codex, make sure the vLLM OpenAI-compatible endpoint is reachable at the configured URL:
+```bash
+  curl http://127.0.0.1:8000/v1/models # whatever is the appropriate url after setting up the vllm in perlmutter/remote machine
+
+  ```
+  
