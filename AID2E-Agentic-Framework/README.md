@@ -59,8 +59,7 @@ Codex / Claude Desktop / other MCP client
 ├── uses its own agent loop
 ├── reads project instructions
 ├── discovers your MCP tools
-├── calls your tools
-└── produces the final answe
+├── calls your toolsr
 ```
 
 This basically changes from responsibility of the framework from creating, managing and executing tools to providing MCP servers with tools and instructions. Local LLM provider itself becomes a MCP tool. See example [here](https://dev.to/0xkoji/run-codex-cli-with-local-llm-gemma4-with-llamacpp-on-wsl2-pee).
