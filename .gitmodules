@@ -1,0 +1,3 @@
+[submodule "swf-monitor"]
+	path = swf-monitor
+	url = //github.com/wguanicedew/swf-monitor.git

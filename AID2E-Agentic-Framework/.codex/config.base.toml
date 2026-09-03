@@ -1,0 +1,6 @@
+# .codex/config.base.toml
+
+# AID2E specific Codex settings shared by all MCP server fragments.
+
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
