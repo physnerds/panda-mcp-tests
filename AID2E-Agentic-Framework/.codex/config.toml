@@ -46,6 +46,32 @@ approval_mode = "approve"
 [mcp_servers.openviking.tools.openviking_add_resource]
 approval_mode = "prompt"
 
+# .codex/mcp_servers/panda-idds.toml
+
+[mcp_servers.panda-idds]
+type = "streamable_http"
+url = "http://localhost:25888/mcp/"
+enabled = true
+required = false
+startup_timeout_sec = 10
+tool_timeout_sec = 120
+bearer_token_env_var = "PANDA_IDDS_MCP_TOKEN"
+
+[mcp_servers.panda-idds.tools.is_alive]
+approval_mode = "approve"
+
+[mcp_servers.panda-idds.tools.get_user_attributes]
+approval_mode = "approve"
+
+[mcp_servers.panda-idds.tools.get_status]
+approval_mode = "approve"
+
+[mcp_servers.panda-idds.tools.get_description]
+approval_mode = "approve"
+
+[mcp_servers.panda-idds.tools.get_available_event_range_count]
+approval_mode = "approve"
+
 # .codex/mcp_servers/swf-testbed.toml
 
 [mcp_servers.swf-testbed]
@@ -55,3 +81,12 @@ bearer_token_env_var = "SWF_MONITOR_MCP_TOKEN"
 
 [mcp_servers.swf-testbed.tools.panda_get_activity]
 approval_mode = "approve"
+
+[tui]
+screen_reader_detection_done = true
+
+[tui.model_availability_nux]
+"gpt-6.1-sol" = 1
+
+[projects."/home/amitbashyal/Documents/BNL-AiD2E/mcp-server"]
+trust_level = "trusted"

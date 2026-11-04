@@ -14,6 +14,7 @@ Edit these source files:
 
 - `.codex/config.base.toml`
 - `.codex/mcp_servers/openviking.toml`
+- `.codex/mcp_servers/panda-idds.toml`
 - `.codex/mcp_servers/swf-testbed.toml`
 
 Then regenerate:

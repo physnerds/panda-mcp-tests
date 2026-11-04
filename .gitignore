@@ -6,6 +6,7 @@ ask-panda/
 venv/
 env/
 ENV/
+AID2E-Agentic-Framework/.venv-aid2e-agent/
 
 # Python cache
 __pycache__/
@@ -26,6 +27,8 @@ var/
 .env
 *.sh
 !set_api.sh
+!AID2E-Agentic-Framework/scripts/setup-aid2e-langchain-test.sh
+!AID2E-Agentic-Framework/scripts/run-aid2e-langchain-test.sh
 
 # IDE
 .vscode/

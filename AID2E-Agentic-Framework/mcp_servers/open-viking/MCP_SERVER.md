@@ -18,6 +18,10 @@ source set_ssl.sh
 export OPENVIKING_API_KEY_FILE="$PWD/.api_key"
 ```
 
+`set_ssl.sh` exports `OPENVIKING_SSL_CERT_FILE`, not the process-wide
+`SSL_CERT_FILE`, so it does not replace the trust store used by PanDA, BNL, or
+other HTTPS clients in the same shell.
+
 Start the streamable HTTP MCP endpoint:
 
 ```bash
@@ -35,6 +39,7 @@ Useful environment overrides:
 - `OPENVIKING_URL`: OpenViking backend URL, default `https://aipanda106.cern.ch:443`
 - `OPENVIKING_API_KEY_FILE`: API key file, default `.api_key` in this directory
 - `OPENVIKING_REQUIRE_SSL_ENV`: set to `0` to skip the SSL environment check
+- `OPENVIKING_SSL_CERT_FILE`: CERN CA used only when OpenViking creates its client
 - `OPENVIKING_MCP_HOST`: MCP bind host, default `0.0.0.0`
 - `OPENVIKING_MCP_PORT`: MCP port, default `25901`
 - `OPENVIKING_MCP_TRANSPORT`: FastMCP transport, default `streamable-http`

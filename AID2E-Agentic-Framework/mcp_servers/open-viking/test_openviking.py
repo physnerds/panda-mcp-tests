@@ -1,13 +1,13 @@
 import os
 from pathlib import Path
 
-import openviking as ov
+from openviking_client import DEFAULT_OPENVIKING_CA_FILE, OpenVikingAipandaClient
 
 
 def configure_ssl_cert_file() -> None:
     """Use the CERN root CA required by the OpenViking HTTPS endpoint."""
-    default_ca = Path(__file__).parent / "cern-root-cert" / "CERN_Root_Certification_Authority_2.pem"
-    path = os.environ.get("SSL_CERT_FILE")
+    default_ca = DEFAULT_OPENVIKING_CA_FILE
+    path = os.environ.get("OPENVIKING_SSL_CERT_FILE")
     ca_file = Path(path).expanduser() if path else default_ca
 
     try:
@@ -18,7 +18,7 @@ def configure_ssl_cert_file() -> None:
     if "BEGIN CERTIFICATE" not in content:
         ca_file = default_ca
 
-    os.environ["SSL_CERT_FILE"] = str(ca_file)
+    os.environ["OPENVIKING_SSL_CERT_FILE"] = str(ca_file)
 
 
 configure_ssl_cert_file()
@@ -29,7 +29,7 @@ url="http://localhost:1933"
 
 url="https://aipanda106.cern.ch:443"
 
-client = ov.SyncHTTPClient(url=url, api_key=api_key)
+client = OpenVikingAipandaClient(url=url)
 
 
 

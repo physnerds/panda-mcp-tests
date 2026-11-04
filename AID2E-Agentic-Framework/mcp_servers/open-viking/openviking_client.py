@@ -2,8 +2,8 @@
 """Client utility for the OpenViking service on aipanda106.cern.ch.
 
 Run ``source set_ssl.sh`` before using this client so the CERN CA path is
-available through ``SSL_CERT_FILE`` or ``SSL_CERT_DIR``. The OpenViking API key
-is read from ``.api_key`` in this directory by default.
+available through ``OPENVIKING_SSL_CERT_FILE``. The OpenViking API key is read
+from ``.api_key`` in this directory by default.
 """
 
 from __future__ import annotations
@@ -11,23 +11,56 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-import openviking as ov
+# This wrapper talks to a remote OpenViking server and needs only the lightweight
+# HTTP SDK.  The full ``openviking`` server package pins an older MCP generation
+# that conflicts with the FastMCP version used by the agentic framework.
+import openviking_sdk as ov
 
 DEFAULT_OPENVIKING_URL = "https://aipanda106.cern.ch:443"
 DEFAULT_API_KEY_FILE = Path(__file__).resolve().parent / ".api_key"
+DEFAULT_OPENVIKING_CA_FILE = (
+    Path(__file__).resolve().parents[3]
+    / "cern-root-cert"
+    / "CERN_Root_Certification_Authority_2.pem"
+)
 
 
 def require_ssl_environment() -> None:
     """Fail early when set_ssl.sh has not configured certificate variables."""
-    if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
+    if os.environ.get("OPENVIKING_SSL_CERT_FILE"):
         return
     raise RuntimeError(
-        "SSL certificate environment is not configured. Run `source set_ssl.sh` "
-        "from the open-viking directory before using this client."
+        "OpenViking TLS is not configured. Run `source set_ssl.sh` from the "
+        "open-viking directory to set OPENVIKING_SSL_CERT_FILE."
     )
+
+
+def get_openviking_ca_file() -> Path:
+    """Return and validate the CA file used only for the OpenViking backend."""
+    ca_file = Path(
+        os.environ.get("OPENVIKING_SSL_CERT_FILE", DEFAULT_OPENVIKING_CA_FILE)
+    ).expanduser()
+    if not ca_file.is_file():
+        raise RuntimeError(f"OpenViking CA file does not exist: {ca_file}")
+    return ca_file
+
+
+@contextmanager
+def _openviking_tls_environment():
+    """Expose the CERN CA only while the SDK constructs its HTTP client."""
+    previous = os.environ.get("SSL_CERT_FILE")
+    os.environ["SSL_CERT_FILE"] = str(get_openviking_ca_file())
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("SSL_CERT_FILE", None)
+        else:
+            os.environ["SSL_CERT_FILE"] = previous
 
 
 def load_api_key(api_key_file: Optional[str] = None) -> str:
@@ -58,7 +91,11 @@ class OpenVikingAipandaClient:
 
     def initialize(self) -> None:
         if not self.initialized:
-            self.client.initialize()
+            # The installed OpenViking SDK does not expose an explicit TLS
+            # verify argument. httpx reads SSL_CERT_FILE when initialize()
+            # constructs its AsyncClient, so scope the override to that call.
+            with _openviking_tls_environment():
+                self.client.initialize()
             self.initialized = True
 
     def close(self) -> None:
@@ -141,7 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-require-ssl-env",
         action="store_true",
-        help="Do not require SSL_CERT_FILE or SSL_CERT_DIR to be set before connecting.",
+        help="Do not require OPENVIKING_SSL_CERT_FILE to be set before connecting.",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)

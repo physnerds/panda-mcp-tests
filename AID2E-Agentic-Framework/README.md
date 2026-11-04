@@ -8,6 +8,27 @@ This is the workspace where we want to develop a more organized Agentic-Framewor
 - MCP servers layer (Either you build them or they are available)
 - LLM service layer (Layer that can provide access to LLM remote, local, open, paid etc)
 
+## AID2E optimization-agent quick start
+
+With AID2E, the agent dependencies, and all MCP services already provisioned,
+the runnable LangChain example configures the shell, verifies the AID2E,
+OpenViking, and SWF MCP servers plus BNL Brain, launches and monitors a DTLZ2
+optimization, and archives its evidence and summaries in OpenViking:
+
+```bash
+source ./scripts/setup-aid2e-langchain-test.sh
+./scripts/run-aid2e-langchain-test.sh
+```
+
+Runtime uses four terminals: one for AID2E MCP, one for the SWF MCP access
+tunnel, one for OpenViking MCP, and one for the runner. Source the setup script
+in the AID2E, OpenViking, and runner terminals before executing their commands.
+The complete commands are in the runbook below.
+
+See
+`knowledge-base/AID2E-LangChain-End-to-End-Test-Runbook-2026-11-03T20-39-08-0500.md`
+for prerequisites, manual startup, output locations, and troubleshooting.
+
 
 ## What the framework needs to do?
 The 4 main responsibilities of the framework are:

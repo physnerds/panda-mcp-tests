@@ -63,7 +63,7 @@ The variables script sets:
 - `OPENVIKING_MCP_PORT`, default `25901`
 - `OPENVIKING_MCP_TRANSPORT`, default `streamable-http`
 - `OPENVIKING_REQUIRE_SSL_ENV`, default `1`
-- `SSL_CERT_FILE`, when neither `SSL_CERT_FILE` nor `SSL_CERT_DIR` is set
+- `OPENVIKING_SSL_CERT_FILE`, used only for the OpenViking backend client
 
 The SSL certificate can also be loaded from the OpenViking directory:
 

@@ -86,7 +86,7 @@ def openviking_find(query: str, target_uri: str = "", limit: int = 10) -> dict[s
         the OpenViking search response and should preserve returned resource
         URIs for follow-up openviking_read calls.
 
-    Common failures include missing SSL_CERT_FILE/SSL_CERT_DIR, missing API key,
+    Common failures include missing OPENVIKING_SSL_CERT_FILE, missing API key,
     authentication failure, unavailable OpenViking backend, invalid target_uri,
     or an empty index.
     """
@@ -118,7 +118,7 @@ def openviking_ls(
         A JSON object with ok, operation, arguments, and data. The data field is
         the OpenViking listing response.
 
-    Common failures include missing SSL_CERT_FILE/SSL_CERT_DIR, missing API key,
+    Common failures include missing OPENVIKING_SSL_CERT_FILE, missing API key,
     authentication failure, unavailable backend, or invalid uri.
     """
     arguments = {"uri": uri, "simple": simple, "recursive": recursive}
@@ -145,7 +145,7 @@ def openviking_read(uri: str, offset: int = 0, limit: int = -1) -> dict[str, Any
         A JSON object with ok, operation, arguments, and data. The data field is
         the resource text returned by OpenViking.
 
-    Common failures include missing SSL_CERT_FILE/SSL_CERT_DIR, missing API key,
+    Common failures include missing OPENVIKING_SSL_CERT_FILE, missing API key,
     authentication failure, unavailable backend, invalid uri, or missing
     resource.
     """
@@ -171,7 +171,7 @@ def openviking_abstract(uri: str) -> dict[str, Any]:
         A JSON object with ok, operation, arguments, and data. The data field is
         the resource abstract text returned by OpenViking.
 
-    Common failures include missing SSL_CERT_FILE/SSL_CERT_DIR, missing API key,
+    Common failures include missing OPENVIKING_SSL_CERT_FILE, missing API key,
     authentication failure, unavailable backend, invalid uri, or missing
     abstract.
     """
@@ -197,7 +197,7 @@ def openviking_overview(uri: str) -> dict[str, Any]:
         A JSON object with ok, operation, arguments, and data. The data field is
         the overview text returned by OpenViking.
 
-    Common failures include missing SSL_CERT_FILE/SSL_CERT_DIR, missing API key,
+    Common failures include missing OPENVIKING_SSL_CERT_FILE, missing API key,
     authentication failure, unavailable backend, invalid uri, or missing
     overview.
     """
@@ -234,7 +234,7 @@ def openviking_add_resource(
         A JSON object with ok, operation, arguments, and data. The data field is
         the OpenViking ingestion response.
 
-    Common failures include missing SSL_CERT_FILE/SSL_CERT_DIR, missing API key,
+    Common failures include missing OPENVIKING_SSL_CERT_FILE, missing API key,
     authentication failure, unavailable backend, nonexistent path, invalid
     destination, or ingestion timeout.
     """
