@@ -8,6 +8,7 @@ import pytest
 from mcp_servers.aid2e.runtime import AID2ERuntime, RuntimeSettings
 from services.aid2e_optimization_agent import (
     SummaryRecord,
+    TrialEventAggregator,
     build_event_fallback,
     build_trial_fallback,
     ensure_one_sentence,
@@ -149,6 +150,36 @@ def test_summary_contract_and_files(tmp_path):
         (tmp_path / "summaries" / "summary_records.jsonl").read_text()
     )
     assert journal_record["trial_index"] == 2
+
+
+def test_trial_event_aggregator_yields_one_terminal_history_per_trial():
+    aggregator = TrialEventAggregator()
+    assert aggregator.observe(
+        {"event_type": "run.started", "trial_index": None}
+    ) is None
+    assert aggregator.observe(
+        {"event_type": "trial.suggested", "trial_index": 3, "sequence": 1}
+    ) is None
+    assert aggregator.observe(
+        {"event_type": "trial.started", "trial_index": 3, "sequence": 2}
+    ) is None
+
+    terminal = aggregator.observe(
+        {"event_type": "trial.completed", "trial_index": 3, "sequence": 3}
+    )
+    assert terminal is not None
+    index, events = terminal
+    assert index == 3
+    assert [event["sequence"] for event in events] == [1, 2, 3]
+
+    assert aggregator.observe(
+        {"event_type": "trial.completed", "trial_index": 3, "sequence": 4}
+    ) is None
+    failed = aggregator.observe(
+        {"event_type": "trial.failed", "trial_index": 4, "sequence": 5}
+    )
+    assert failed is not None
+    assert failed[0] == 4
 
 
 class _FakeSessionClient:

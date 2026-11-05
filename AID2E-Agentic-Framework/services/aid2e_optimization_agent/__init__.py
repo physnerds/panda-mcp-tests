@@ -3,6 +3,7 @@
 from .memory import (
     SUMMARY_SYSTEM_PROMPT,
     SummaryRecord,
+    TrialEventAggregator,
     build_event_fallback,
     build_trial_fallback,
     ensure_one_sentence,
@@ -13,6 +14,7 @@ from .memory import (
 __all__ = [
     "SUMMARY_SYSTEM_PROMPT",
     "SummaryRecord",
+    "TrialEventAggregator",
     "build_event_fallback",
     "build_trial_fallback",
     "ensure_one_sentence",

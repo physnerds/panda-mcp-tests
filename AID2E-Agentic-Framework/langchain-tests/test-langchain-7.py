@@ -5,9 +5,10 @@ Prerequisites:
   2. Configure the BNL OpenAI-compatible model variables.
   3. Configure the existing OpenViking client/TLS variables.
 
-The control loop calls the two AID2E MCP tools deterministically. LangChain is
-used for the monitoring agent's one-sentence event/trial summaries. OpenViking
-archival stays in the agent layer and never enters AID2E core.
+The control loop calls the two AID2E MCP tools deterministically. LangChain
+aggregates each trial's lifecycle events and creates one summary only after the
+trial becomes terminal. OpenViking archival stays in the agent layer and never
+enters AID2E core.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ from services.aid2e_event_archival import EventArchivalService
 from services.aid2e_optimization_agent import (
     SUMMARY_SYSTEM_PROMPT,
     SummaryRecord,
-    build_event_fallback,
+    TrialEventAggregator,
     build_trial_fallback,
     ensure_one_sentence,
     record_openviking_session,
@@ -45,14 +46,6 @@ from services.aid2e_optimization_agent import (
 
 
 DEFAULT_AID2E_MCP_URL = "http://127.0.0.1:25902/mcp/"
-TERMINAL_TRIAL_EVENTS = {
-    "trial.completed",
-    "trial.failed",
-    "trial.penalized",
-    "trial.cancelled",
-}
-
-
 class OptimizationResponseSchema(BaseModel):
     """Compact final response, including all model usage for this run."""
 
@@ -153,29 +146,90 @@ def _message_text(result: dict[str, Any]) -> str:
     return str(content)
 
 
-async def _summarize(
+async def _summarize_trial(
     agent: Any,
-    prompt: str,
-    fallback: str,
+    trial_index: int,
+    events: list[dict[str, Any]],
     *,
     usage: TokenUsage,
-    label: str,
 ) -> str:
-    print(f"[summary] requesting {label}", flush=True)
+    fallback = build_trial_fallback(events)
+    print(
+        f"[summary] requesting terminal trial {trial_index}; "
+        f"events={len(events)}",
+        flush=True,
+    )
     try:
         result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": prompt}]}
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Summarize this terminal AID2E trial from all of its "
+                            "observed lifecycle events in exactly one factual "
+                            "sentence; include the resulting state and important "
+                            "objective or error data, and do not invent missing "
+                            "facts:\n"
+                            + json.dumps(events, sort_keys=True)
+                        ),
+                    }
+                ]
+            }
         )
         call_input, call_output = usage.add_result(result)
         print(
-            f"[summary] completed {label}; "
+            f"[summary] completed trial {trial_index}; "
             f"tokens input={call_input} output={call_output}",
             flush=True,
         )
         return ensure_one_sentence(_message_text(result))
     except Exception as exc:
-        print(f"[summary] fallback for {label}: {exc}", flush=True)
+        print(f"[summary] fallback for trial {trial_index}: {exc}", flush=True)
         return fallback
+
+
+async def _summarize_and_archive_trial(
+    *,
+    agent: Any,
+    trial_index: int,
+    events: list[dict[str, Any]],
+    usage: TokenUsage,
+    run_id: str,
+    state_dir: Path,
+    archival: EventArchivalService,
+) -> tuple[SummaryRecord, Any]:
+    sentence = await _summarize_trial(
+        agent,
+        trial_index,
+        events,
+        usage=usage,
+    )
+    terminal_event = events[-1]
+    record = SummaryRecord(
+        kind="trial_summary",
+        run_id=run_id,
+        sentence=sentence,
+        source_event_id=str(terminal_event["event_id"]),
+        source_sequence=int(terminal_event["sequence"]),
+        trial_index=trial_index,
+    )
+    path = write_summary_record(state_dir, record)
+    receipt = archival.archiver.archive_file(
+        run_id=run_id,
+        source_event_id=f"__trial_summary__:{trial_index}",
+        source_sequence=int(terminal_event["sequence"]),
+        artifact_id=f"trial-{trial_index:06d}-summary",
+        kind="trial_summary_l0_source",
+        path=path,
+    )
+    stored_record = replace(
+        record,
+        openviking_uri=receipt.openviking_uri,
+        status=receipt.status,
+    )
+    write_summary_record(state_dir, stored_record)
+    return stored_record, receipt
 
 
 def _print_receipt(receipt: Any, *, prefix: str = "upload") -> None:
@@ -244,7 +298,7 @@ async def run_optimization_agent(
 
     transport = StreamableHttpTransport(aid2e_mcp_url)
     records: list[SummaryRecord] = []
-    trial_events: dict[int, list[dict[str, Any]]] = {}
+    trial_aggregator = TrialEventAggregator()
     usage = TokenUsage()
     cursor = 0
     started = time.monotonic()
@@ -317,84 +371,22 @@ async def run_optimization_agent(
                         f"type={event['event_type']} trial={event.get('trial_index')}",
                         flush=True,
                     )
-                    if event.get("trial_index") is not None:
-                        trial_events.setdefault(
-                            int(event["trial_index"]), []
-                        ).append(event)
-                    fallback = build_event_fallback(event)
-                    sentence = await _summarize(
-                        summary_agent,
-                        "Summarize this single AID2E event in exactly one sentence:\n"
-                        + json.dumps(event, sort_keys=True),
-                        fallback,
-                        usage=usage,
-                        label=f"event sequence {event['sequence']}",
-                    )
-                    record = SummaryRecord(
-                        kind="event_summary",
-                        run_id=run_id,
-                        sentence=sentence,
-                        source_event_id=str(event["event_id"]),
-                        source_sequence=int(event["sequence"]),
-                        trial_index=event.get("trial_index"),
-                    )
-                    path = write_summary_record(state_dir, record)
-                    receipt = archival.archiver.archive_file(
-                        run_id=run_id,
-                        source_event_id=f"__event_summary__:{event['event_id']}",
-                        source_sequence=int(event["sequence"]),
-                        artifact_id=f"event-{int(event['sequence']):08d}-summary",
-                        kind="event_summary_l0_source",
-                        path=path,
-                    )
-                    receipt_offset = _print_new_receipts(archival, receipt_offset)
-                    stored_record = replace(
-                        record,
-                        openviking_uri=receipt.openviking_uri,
-                        status=receipt.status,
-                    )
-                    write_summary_record(state_dir, stored_record)
-                    records.append(stored_record)
-
-                    if event["event_type"] in TERMINAL_TRIAL_EVENTS:
-                        index = int(event["trial_index"])
-                        observed = trial_events[index]
-                        trial_fallback = build_trial_fallback(observed)
-                        trial_sentence = await _summarize(
-                            summary_agent,
-                            "Summarize this completed AID2E trial in exactly one sentence:\n"
-                            + json.dumps(observed, sort_keys=True),
-                            trial_fallback,
-                            usage=usage,
-                            label=f"trial {index}",
-                        )
-                        trial_record = SummaryRecord(
-                            kind="trial_summary",
-                            run_id=run_id,
-                            sentence=trial_sentence,
-                            source_event_id=str(event["event_id"]),
-                            source_sequence=int(event["sequence"]),
+                    terminal_trial = trial_aggregator.observe(event)
+                    if terminal_trial is not None:
+                        index, observed_events = terminal_trial
+                        stored_record, _ = await _summarize_and_archive_trial(
+                            agent=summary_agent,
                             trial_index=index,
-                        )
-                        trial_path = write_summary_record(state_dir, trial_record)
-                        trial_receipt = archival.archiver.archive_file(
+                            events=observed_events,
+                            usage=usage,
                             run_id=run_id,
-                            source_event_id=f"__trial_summary__:{index}",
-                            source_sequence=int(event["sequence"]),
-                            artifact_id=f"trial-{index:06d}-summary",
-                            kind="trial_summary_l0_source",
-                            path=trial_path,
+                            state_dir=state_dir,
+                            archival=archival,
                         )
                         receipt_offset = _print_new_receipts(
                             archival, receipt_offset
                         )
-                        stored_trial_record = replace(
-                            trial_record,
-                            openviking_uri=trial_receipt.openviking_uri,
-                            status=trial_receipt.status,
-                        )
-                        write_summary_record(state_dir, stored_trial_record)
-                        records.append(stored_trial_record)
+                        records.append(stored_record)
 
                 terminal = bool(
                     latest_status["terminal"] and not latest_status["has_more"]
@@ -523,6 +515,7 @@ async def run_optimization_agent(
         "run_dir": str(run_dir),
         "event_summaries": sum(item.kind == "event_summary" for item in records),
         "trial_summaries": sum(item.kind == "trial_summary" for item in records),
+        "summary_uploads": len(records),
         "summary_records": [item.to_dict() for item in records],
         "archival": archival_result,
         "monitoring_journal_receipt": monitoring_receipt.to_dict(),

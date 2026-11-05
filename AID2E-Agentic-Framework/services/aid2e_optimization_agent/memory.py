@@ -10,16 +10,15 @@ from typing import Any, Iterable
 
 
 SUMMARY_SYSTEM_PROMPT = (
-    "You are an AID2E optimization monitoring agent. For every lifecycle event "
-    "you observe, write exactly one factual sentence stating what changed, which "
-    "run/trial/batch it concerns, its resulting state, and any important objective "
-    "or error data present; never invent missing facts. When a trial reaches a "
-    "terminal event, also write exactly one factual sentence summarizing that trial "
-    "from its observed events. Keep detailed logs as evidence and cite their "
-    "OpenViking URIs when available. These one-sentence records are compact L0-like "
-    "orientation; OpenViking L1 is a directory overview, not a per-event sentence."
+    "You are an AID2E optimization monitoring agent. Accumulate lifecycle events "
+    "for each trial without summarizing them individually. When a trial reaches a "
+    "successful or failed terminal state, write exactly one factual sentence that "
+    "summarizes the complete observed trial lifecycle, resulting state, and any "
+    "important objective or error data present; never invent missing facts. Keep "
+    "detailed logs as evidence and cite their OpenViking URIs when available. These "
+    "trial records are compact L0-like orientation; OpenViking L1 is a directory "
+    "overview, not a per-event sentence."
 )
-
 
 @dataclass(frozen=True)
 class SummaryRecord:
@@ -34,6 +33,40 @@ class SummaryRecord:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+class TrialEventAggregator:
+    """Collect trial events and yield each trial exactly once at terminal state."""
+
+    terminal_event_types = frozenset(
+        {
+            "trial.completed",
+            "trial.failed",
+            "trial.penalized",
+            "trial.cancelled",
+        }
+    )
+
+    def __init__(self) -> None:
+        self._events: dict[int, list[dict[str, Any]]] = {}
+        self._terminal_trials: set[int] = set()
+
+    def observe(
+        self, event: dict[str, Any]
+    ) -> tuple[int, list[dict[str, Any]]] | None:
+        trial_index = event.get("trial_index")
+        if trial_index is None:
+            return None
+        index = int(trial_index)
+        history = self._events.setdefault(index, [])
+        history.append(event)
+        if (
+            event.get("event_type") not in self.terminal_event_types
+            or index in self._terminal_trials
+        ):
+            return None
+        self._terminal_trials.add(index)
+        return index, list(history)
 
 
 def ensure_one_sentence(text: str) -> str:
